@@ -1,6 +1,6 @@
 const express = require('express')
 const app = express()
-const port = process.env.HEROKU ? 80 : 3000;
+const port = process.env.HEROKU ? process.env.PORT : 3000;
 
 app.all('/', (req, res) => res.send('Hello World!'));
 
