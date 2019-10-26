@@ -1,11 +1,6 @@
 const express = require('express')
 const app = express()
-let port = 3000;
-
-if (process.env._ && process.env._.indexOf("heroku")) {
-    console.log("I'm in Heroku!");
-    port = 80;
-}
+const port = process.env.HEROKU ? 80 : 3000;
 
 app.all('/', (req, res) => res.send('Hello World!'));
 
