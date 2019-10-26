@@ -1,0 +1,14 @@
+{
+  "name": "steamappslist",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "PaulCombal <abonnementspaul@gmail.com>",
+  "license": "GPL-3.0-or-later",
+  "private": false,
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
