@@ -79,7 +79,8 @@ function generateList() {
             const ids = batch.map(a => a.appid).join(',');
 
             console.log('Starting batch ' + index + ' of ' + batches_count + ' - ' + Math.round(100*index/batches_count) + '%');
-            console.log('Processing appids: ' + ids + ' - Estimated time remaining: ' + millisToDiffStr((now - start_date) / (index/batches_count)));
+            console.log('Processing appids: ' + ids + ' - Estimated time needed: ' + millisToDiffStr((now - start_date) / (index/batches_count)));
+            console.log('ETA: ' + millisToDiffStr(((now - start_date) / (index/batches_count) - (now - start_date))));
             console.log('------------------');
 
             let response = await fetch(data_url + ids);
