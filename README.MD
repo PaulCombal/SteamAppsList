@@ -9,7 +9,9 @@ It's only used by me, but if you need it feel free to ask questions and make pul
 ## Don't forget
 
 Fill in the right credentials in git_credentials.json BEFORE launching this even ONCE.
+You can also use the environment variables GITUSERNAME and GITPASSWORD.
 Or just delete the cloned repo and retry.
+This is used to push the commit for the dumps repo.
 
 ## LICENSE
 

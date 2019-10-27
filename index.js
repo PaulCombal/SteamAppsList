@@ -22,7 +22,7 @@ const refresh_rate = 1000 * 60 * 60 * 24;
 const local_dump_path = './dumps';
 const local_dump_name = './app_list.json';
 const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic&appids=';
-const git_dumps_url = 'https://' + git_credentials.login + ':' + git_credentials.password + '@github.com/PaulCombal/SteamAppsListDumps.git';
+const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
 const all_apps_list = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
 const startDir = process.cwd();
 const is_dev = !process.env.PORT;
@@ -95,7 +95,6 @@ function isOldList() {
         const now = new Date();
         const millis = now - lastDate;
         return millis > refresh_rate;
-
     } catch (e) {
         console.warn('An error occurred ensuring old list');
         console.log(e);
