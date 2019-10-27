@@ -26,6 +26,16 @@ const startDir = process.cwd();
 const is_dev = !process.env.PORT;
 let is_processing = false;
 
+function millisToDiffStr(millis) {
+    let seconds = millis / 1000;
+    const hours = Math.floor(seconds / 3600); // 3,600 seconds in 1 hour
+    seconds = seconds % 3600; // seconds remaining after extracting hours
+    const minutes = Math.floor( seconds / 60 ); // 60 seconds in 1 minute
+    seconds = Math.floor(seconds % 60);
+
+    return hours + 'h ' + minutes + 'm ' + seconds + 's';
+}
+
 function timeOutPromise(millis) {
     return new Promise((resolve) => {
         setTimeout(resolve, millis);
@@ -61,14 +71,19 @@ function generateList() {
         }
 
         const batches_count = app_batches.length;
+        const start_date = new Date();
 
         // Let's not query too fast and wait for the previous request to finish, we can get codes 429 too many requests
         await asyncForEach(app_batches, async (batch, index) => {
-            console.log('Starting batch ' + index + ' of ' + batches_count);
+            const now = new Date();
             const ids = batch.map(a => a.appid).join(',');
-            let response = await fetch(data_url + ids);
 
-            while (!response.ok) { // API answers with : 'Not modified'
+            console.log('Starting batch ' + index + ' of ' + batches_count + ' - ' + Math.round(100*index/batches_count) + '%');
+            console.log('Processing appids: ' + ids + ' - Estimated time remaining: ' + millisToDiffStr((now - start_date) / (index/batches_count)));
+            console.log('------------------');
+
+            let response = await fetch(data_url + ids);
+            while (!response.ok) {
                 console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
                 console.warn('Url: ', data_url + ids);
                 await timeOutPromise(1000 * 60 * 2); // 2 minutes
