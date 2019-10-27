@@ -16,8 +16,6 @@ const git_credentials = require('./git_credentials.json');
 const fetch = require('node-fetch');
 const run = require('child_process').execSync;
 const fs = require('fs');
-const PS = require('promise-stack');
-const promise_stack = new PS();
 const refresh_rate = 1000 * 60 * 60 * 24;
 const local_dump_path = './dumps';
 const local_dump_name = './app_list.json';
@@ -28,15 +26,27 @@ const startDir = process.cwd();
 const is_dev = !process.env.PORT;
 let is_processing = false;
 
+function timeOutPromise(millis) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, millis);
+    })
+}
+
+
+async function asyncForEach(array, callback) {
+    for (let index = 0; index < array.length; index++) {
+        await callback(array[index], index, array);
+    }
+}
+
 
 function generateList() {
-    return new Promise(async (resolve, reject) => {
+    return new Promise(async (resolve) => {
         const number_simultaneous_process = 1; // For now we query them 1 by 1, let's see of they fix their API
 
         const list = await fetch(all_apps_list).then(r => r.json());
         //const list = {"applist":{"apps":[{"appid":216938,"name":"Pieterw test app76 ( 216938 )"},{"appid":660010,"name":"test2"},{"appid":660130,"name":"test3"},{"appid":397950,"name":"Clustertruck"},{"appid":397960,"name":"Mystery Expedition: Prisoners of Ice"},{"appid":397970,"name":"Abandoned: Chestnut Lodge Asylum"},{"appid":397980,"name":"Invasion"},{"appid":397990,"name":"Woof Blaster"},{"appid":398000,"name":"Little Big Adventure 2"},{"appid":398020,"name":"Colony Assault"},{"appid":398070,"name":"Protoshift"}]}};
 
-        let processed = 0;
         const apps_count = list.applist.apps.length;
 
         const arranged_list = {
@@ -50,37 +60,32 @@ function generateList() {
             app_batches.push(list.applist.apps.slice(index, index + number_simultaneous_process));
         }
 
-        // Let's not query too fast and wait for the previous request to finish, better safe than sorry, and performance isn't an issue
-        app_batches.forEach((batch) => {
-            const ids = batch.map(a => a.appid).join(',');
-            const promise = () => {
-                return new Promise((resolve, reject) => {
-                    fetch(data_url + ids)
-                        .then(r => r.json())
-                        .then((data) => {
-                            batch.forEach((app) => {
-                                arranged_list.applist.apps.push({
-                                    appid: app.appid,
-                                    name: app.name,
-                                    type: data[app.appid].success ? data[app.appid].data.type : "junk"
-                                })
-                            });
-                            processed += number_simultaneous_process;
-                            console.log('fetched ' + processed + ' / ' + apps_count);
-                            resolve();
-                        })
-                        .catch(reject)
-                    ;
-                })
-            };
+        const batches_count = app_batches.length;
 
-            promise_stack.set(promise);
+        // Let's not query too fast and wait for the previous request to finish, we can get codes 429 too many requests
+        await asyncForEach(app_batches, async (batch, index) => {
+            console.log('Starting batch ' + index + ' of ' + batches_count);
+            const ids = batch.map(a => a.appid).join(',');
+            let response = await fetch(data_url + ids);
+
+            while (!response.ok) { // API answers with : 'Not modified'
+                console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
+                console.warn('Url: ', data_url + ids);
+                await timeOutPromise(1000 * 60 * 2); // 2 minutes
+                response = await fetch(data_url + ids);
+            }
+
+            const data = await response.json();
+            batch.forEach((app) => {
+                arranged_list.applist.apps.push({
+                    appid: app.appid,
+                    name: app.name,
+                    type: data[app.appid].success ? data[app.appid].data.type : "junk"
+                });
+            });
         });
 
-        promise_stack.on('empty', () => {
-            console.log('Download finished');
-            resolve(arranged_list);
-        })
+        resolve(arranged_list);
     });
 }
 
@@ -146,6 +151,7 @@ async function fullUpdate() {
     }
 
     try {
+        console.log('Pushing new data to repo..');
         run('git add ' + local_dump_name);
         run('git commit -m "Auto commit"');
         run('git push origin master');
