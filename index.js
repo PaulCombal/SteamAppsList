@@ -19,6 +19,7 @@ const fs = require('fs');
 const refresh_rate = 1000 * 60 * 60 * 24;
 const local_dump_path = './dumps';
 const local_dump_name = './app_list.json';
+const local_dump_name_games = './game_list.json';
 const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic&appids=';
 const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
 const all_apps_list = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
@@ -50,28 +51,29 @@ async function asyncForEach(array, callback) {
 }
 
 
-function generateList() {
+function generateList(exclude_list = []) {
     return new Promise(async (resolve) => {
         const number_simultaneous_process = 1; // For now we query them 1 by 1, let's see of they fix their API
 
-        const list = await fetch(all_apps_list).then(r => r.json());
-        //const list = {"applist":{"apps":[{"appid":216938,"name":"Pieterw test app76 ( 216938 )"},{"appid":660010,"name":"test2"},{"appid":660130,"name":"test3"},{"appid":397950,"name":"Clustertruck"},{"appid":397960,"name":"Mystery Expedition: Prisoners of Ice"},{"appid":397970,"name":"Abandoned: Chestnut Lodge Asylum"},{"appid":397980,"name":"Invasion"},{"appid":397990,"name":"Woof Blaster"},{"appid":398000,"name":"Little Big Adventure 2"},{"appid":398020,"name":"Colony Assault"},{"appid":398070,"name":"Protoshift"}]}};
-
-        const apps_count = list.applist.apps.length;
-
+        //const all_apps_list = {"applist":{"apps":[{"appid":216938,"name":"Pieterw test app76 ( 216938 )"},{"appid":660010,"name":"test2"},{"appid":660130,"name":"test3"},{"appid":397950,"name":"Clustertruck"},{"appid":397960,"name":"Mystery Expedition: Prisoners of Ice"},{"appid":397970,"name":"Abandoned: Chestnut Lodge Asylum"},{"appid":397980,"name":"Invasion"},{"appid":397990,"name":"Woof Blaster"},{"appid":398000,"name":"Little Big Adventure 2"},{"appid":398020,"name":"Colony Assault"},{"appid":398070,"name":"Protoshift"}]}};
+        const all_apps_list = await fetch(all_apps_list).then(r => r.json());
+        const known_app_ids = exclude_list.map(app => app.appid);
+        const apps_to_process = all_apps_list.applist.apps.filter(app => !known_app_ids.includes(app.appid));
         const arranged_list = {
             applist: {
-                apps: []
+                apps: exclude_list
             }
         };
 
         const app_batches = [];
-        for (let index = 0; index < apps_count; index += number_simultaneous_process) {
-            app_batches.push(list.applist.apps.slice(index, index + number_simultaneous_process));
+        for (let index = 0; index < apps_to_process.length; index += number_simultaneous_process) {
+            app_batches.push(apps_to_process.slice(index, index + number_simultaneous_process));
         }
 
         const batches_count = app_batches.length;
         const start_date = new Date();
+
+        console.log('Starting list generation for ' + apps_to_process.length + ' out of ' + all_apps_list.applist.apps.length + ' Steam apps.');
 
         // Let's not query too fast and wait for the previous request to finish, we can get codes 429 too many requests
         await asyncForEach(app_batches, async (batch, index) => {
@@ -129,6 +131,7 @@ async function fullUpdate() {
         return;
     }
     is_processing = true;
+    let exclude_list = [];
 
     if (fs.existsSync(local_dump_path)) {
         process.chdir(local_dump_path);
@@ -138,6 +141,10 @@ async function fullUpdate() {
             console.warn('Could not git pull');
             console.log(e);
             return;
+        }
+
+        if (fs.existsSync(local_dump_name)) {
+            exclude_list = JSON.parse(fs.readFileSync(local_dump_name).toString()).applist.apps;
         }
     }
     else {
@@ -158,8 +165,15 @@ async function fullUpdate() {
     }
 
     try {
-        const list = await generateList();
+        const list = await generateList(exclude_list);
+        const games_only = {
+            applist: {
+                apps: list.applist.apps.filter(app => app.type === 'game').map(app => ({appid: app.appid, name: app.name}))
+            }
+        };
+
         fs.writeFileSync(local_dump_name, JSON.stringify(list));
+        fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
     } catch (e) {
         console.warn('An error occurred generating list');
         console.log(e);
@@ -170,11 +184,13 @@ async function fullUpdate() {
         console.log('Pushing new data to repo..');
         run('git add ' + local_dump_name);
         run('git commit -m "Auto commit"');
-        run('git push origin master');
+        //run('git push origin master');
     } catch (e) {
         console.log('An error occurred pushing the new list');
         console.log(e);
     }
+
+    console.log('Finished.');
 }
 
 async function main() {
