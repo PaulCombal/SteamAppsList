@@ -10,7 +10,9 @@ app.all('/', (req, res) => {
         main();
     }
 });
-app.listen(port, () => console.log(`Example app listening on port ${port}!`));
+
+if (process.env.WEBSERVER)
+    app.listen(port, () => console.log(`Example app listening on port ${port}!`));
 
 const git_credentials = require('./git_credentials.json');
 const fetch = require('node-fetch');
