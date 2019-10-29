@@ -19,6 +19,7 @@ const fs = require('fs');
 const refresh_rate = 1000 * 60 * 60 * 24;
 const local_dump_path = './dumps';
 const local_dump_name = './app_list.json';
+const local_dump_name_not_games = './not_games.json';
 const local_dump_name_games = './game_list.json';
 const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic&appids=';
 const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
@@ -166,6 +167,7 @@ async function fullUpdate() {
 
     try {
         const list = await generateList(exclude_list);
+        const not_games_list = list.applist.apps.filter(app => app.type !== 'game');
         const games_only = {
             applist: {
                 apps: list.applist.apps.filter(app => app.type === 'game').map(app => ({appid: app.appid, name: app.name}))
@@ -173,6 +175,7 @@ async function fullUpdate() {
         };
 
         fs.writeFileSync(local_dump_name, JSON.stringify(list));
+        fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
         fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
     } catch (e) {
         console.warn('An error occurred generating list');
@@ -182,9 +185,9 @@ async function fullUpdate() {
 
     try {
         console.log('Pushing new data to repo..');
-        run('git add ' + local_dump_name);
+        run('git add -A');
         run('git commit -m "Auto commit"');
-        //run('git push origin master');
+        run('git push origin master');
     } catch (e) {
         console.log('An error occurred pushing the new list');
         console.log(e);
