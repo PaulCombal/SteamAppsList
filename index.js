@@ -25,7 +25,7 @@ const local_dump_name_not_games = './not_games.json';
 const local_dump_name_games = './game_list.json';
 const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic&appids=';
 const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
-const all_apps_list = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
+const all_apps_list_endpoint = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
 const startDir = process.cwd();
 const is_dev = !process.env.PORT;
 let is_processing = false;
@@ -59,7 +59,7 @@ function generateList(exclude_list = []) {
         const number_simultaneous_process = 1; // For now we query them 1 by 1, let's see of they fix their API
 
         //const all_apps_list = {"applist":{"apps":[{"appid":216938,"name":"Pieterw test app76 ( 216938 )"},{"appid":660010,"name":"test2"},{"appid":660130,"name":"test3"},{"appid":397950,"name":"Clustertruck"},{"appid":397960,"name":"Mystery Expedition: Prisoners of Ice"},{"appid":397970,"name":"Abandoned: Chestnut Lodge Asylum"},{"appid":397980,"name":"Invasion"},{"appid":397990,"name":"Woof Blaster"},{"appid":398000,"name":"Little Big Adventure 2"},{"appid":398020,"name":"Colony Assault"},{"appid":398070,"name":"Protoshift"}]}};
-        const all_apps_list = await fetch(all_apps_list).then(r => r.json());
+        const all_apps_list = await fetch(all_apps_list_endpoint).then(r => r.json());
         const known_app_ids = exclude_list.map(app => app.appid);
         const apps_to_process = all_apps_list.applist.apps.filter(app => !known_app_ids.includes(app.appid));
         const arranged_list = {
@@ -92,7 +92,11 @@ function generateList(exclude_list = []) {
             while (!response.ok) {
                 console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
                 console.warn('Url: ', data_url + ids);
-                await timeOutPromise(1000 * 60 * 2); // 2 minutes
+                let timeout = 1000 * 60 * 2; // Too many requests, any random error
+                if (response.status === 502) { // Bad getaway, don't know why but sometimes occur
+                    timeout = 1000;
+                }
+                await timeOutPromise(timeout); // 2 minutes
                 response = await fetch(data_url + ids);
             }
 
