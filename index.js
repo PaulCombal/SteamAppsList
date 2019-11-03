@@ -53,6 +53,28 @@ async function asyncForEach(array, callback) {
     }
 }
 
+function saveList(list) {
+    console.log("Saving list..");
+    console.log("Sorting..");
+
+    list.applist.apps.sort((a, b) => {
+        if (a.appid < b.appid) return -1;
+        return 1;
+    });
+
+    console.log("Filtering..");
+    const not_games_list = list.applist.apps.filter(app => app.type !== 'game');
+    const games_only = {
+        applist: {
+            apps: list.applist.apps.filter(app => app.type === 'game').map(app => ({appid: app.appid, name: app.name}))
+        }
+    };
+
+    console.log("Writing..");
+    fs.writeFileSync(local_dump_name, JSON.stringify(list));
+    fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
+    fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
+}
 
 function generateList(exclude_list = []) {
     return new Promise(async (resolve) => {
@@ -93,7 +115,7 @@ function generateList(exclude_list = []) {
                 console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
                 console.warn('Url: ', data_url + ids);
                 let timeout = 1000 * 60 * 2; // Too many requests, any random error
-                if (response.status === 502) { // Bad getaway, don't know why but sometimes occur
+                if (response.status === 502) { // Bad getaway, sometimes occur randomly
                     timeout = 1000;
                 }
                 await timeOutPromise(timeout); // 2 minutes
@@ -149,10 +171,6 @@ async function fullUpdate() {
             console.log(e);
             return;
         }
-
-        if (fs.existsSync(local_dump_name)) {
-            exclude_list = JSON.parse(fs.readFileSync(local_dump_name).toString()).applist.apps;
-        }
     }
     else {
         try {
@@ -171,18 +189,13 @@ async function fullUpdate() {
         return;
     }
 
+    if (fs.existsSync(local_dump_name)) {
+        exclude_list = JSON.parse(fs.readFileSync(local_dump_name).toString()).applist.apps;
+    }
+
     try {
         const list = await generateList(exclude_list);
-        const not_games_list = list.applist.apps.filter(app => app.type !== 'game');
-        const games_only = {
-            applist: {
-                apps: list.applist.apps.filter(app => app.type === 'game').map(app => ({appid: app.appid, name: app.name}))
-            }
-        };
-
-        fs.writeFileSync(local_dump_name, JSON.stringify(list));
-        fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
-        fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
+        saveList(list);
     } catch (e) {
         console.warn('An error occurred generating list');
         console.log(e);
