@@ -179,10 +179,16 @@ function generateList(exclude_list = []) {
 
             const data = await response.json();
             batch.forEach((app) => {
+                let achievements = null;
+                if (data[app.appid].success && data[app.appid].data.achievements) { // Some apps don't have the key for some reason, eg Dota 2, 570
+                    achievements = data[app.appid].data.achievements.total;
+                }
+
                 arranged_list.applist.apps.push({
                     appid: app.appid,
                     name: app.name,
-                    type: data[app.appid].success ? data[app.appid].data.type : "junk"
+                    type: data[app.appid].success ? data[app.appid].data.type : "junk",
+                    achievements
                 });
             });
         });
