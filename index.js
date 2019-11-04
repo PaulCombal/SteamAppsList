@@ -23,7 +23,8 @@ const local_dump_path = './dumps';
 const local_dump_name = './app_list.json';
 const local_dump_name_not_games = './not_games.json';
 const local_dump_name_games = './game_list.json';
-const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic&appids=';
+const local_dump_name_games_achievements = './game_achievements_list.json';
+const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic,achievements&appids=';
 const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
 const all_apps_list_endpoint = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
 const startDir = process.cwd();
@@ -53,6 +54,45 @@ async function asyncForEach(array, callback) {
     }
 }
 
+async function tempFix() {
+    const apps = JSON.parse(fs.readFileSync(local_dump_name).toString());
+
+    await asyncForEach(apps.applist.apps, async (app, index, arr) => {
+        console.log('App ' + index + ' of ' + arr.length);
+        app.achievements = null;
+        if (app.type === 'game') {
+            let response = await fetch(data_url + app.appid);
+            while (!response.ok) {
+                console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
+                console.warn('Url: ', data_url + app.appid);
+                let timeout = 1000 * 60 * 2; // Too many requests, any random error
+                if (response.status === 502) { // Bad getaway, sometimes occur randomly
+                    timeout = 1000;
+                }
+                await timeOutPromise(timeout);
+                response = await fetch(data_url + ids);
+            }
+
+            const data = await response.json();
+            if (!data[app.appid].success) {
+                console.log('failed for game ' + app.appid);
+                console.log(data);
+                return;
+            }
+
+            if (!data[app.appid].data.achievements) { // Some apps don't have the key for some reason, eg Dota 2, 570
+                console.log('App doesn\'t have ach key: ' + app.appid);
+                return;
+            }
+
+            app.achievements = data[app.appid].data.achievements.total;
+
+        }
+    });
+
+    saveList(apps);
+}
+
 function saveList(list) {
     console.log("Saving list..");
     console.log("Sorting..");
@@ -63,17 +103,32 @@ function saveList(list) {
     });
 
     console.log("Filtering..");
-    const not_games_list = list.applist.apps.filter(app => app.type !== 'game');
+
+    const not_games_list = {
+        applist: {
+            apps: list.applist.apps.filter(app => app.type !== 'game').map(app => ({appid: app.appid, name: app.name}))
+        }
+    };
+    fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
+    not_games_list.clear(); // free
+
     const games_only = {
         applist: {
             apps: list.applist.apps.filter(app => app.type === 'game').map(app => ({appid: app.appid, name: app.name}))
         }
     };
-
-    console.log("Writing..");
-    fs.writeFileSync(local_dump_name, JSON.stringify(list));
-    fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
     fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
+    games_only.clear(); // free
+
+    const achievements_only = {
+        applist: {
+            apps: list.applist.apps.filter(app => app.type === 'game' && app.achievements > 0).map(app => ({appid: app.appid, name: app.name}))
+        }
+    };
+    fs.writeFileSync(local_dump_name_games_achievements, JSON.stringify(achievements_only));
+    achievements_only.clear(); // free
+
+    fs.writeFileSync(local_dump_name, JSON.stringify(list));
 }
 
 function generateList(exclude_list = []) {
@@ -216,6 +271,8 @@ async function fullUpdate() {
 }
 
 async function main() {
+    process.chdir(local_dump_path);
+    await tempFix(); return;
     await fullUpdate();
     process.chdir(startDir);
     is_processing = false;
