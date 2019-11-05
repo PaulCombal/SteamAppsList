@@ -56,9 +56,11 @@ async function asyncForEach(array, callback) {
 
 async function tempFix() {
     const apps = JSON.parse(fs.readFileSync(local_dump_name).toString());
+    const startDate = new Date();
 
     await asyncForEach(apps.applist.apps, async (app, index, arr) => {
         console.log('App ' + index + ' of ' + arr.length);
+        console.log(Math.round(100 * index / arr.length) + '% in ' + millisToDiffStr((new Date()) - startDate));
         app.achievements = null;
         if (app.type === 'game') {
             let response = await fetch(data_url + app.appid);
@@ -70,7 +72,7 @@ async function tempFix() {
                     timeout = 1000;
                 }
                 await timeOutPromise(timeout);
-                response = await fetch(data_url + ids);
+                response = await fetch(data_url + app.appid);
             }
 
             const data = await response.json();
