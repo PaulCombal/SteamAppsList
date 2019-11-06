@@ -99,6 +99,8 @@ function saveList(list) {
     console.log("Saving list..");
     console.log("Sorting..");
 
+    fs.writeFileSync(local_dump_name, JSON.stringify(list));
+
     list.applist.apps.sort((a, b) => {
         if (a.appid < b.appid) return -1;
         return 1;
@@ -129,8 +131,6 @@ function saveList(list) {
     };
     fs.writeFileSync(local_dump_name_games_achievements, JSON.stringify(achievements_only));
     achievements_only.applist.apps.clear(); // free
-
-    fs.writeFileSync(local_dump_name, JSON.stringify(list));
 }
 
 function generateList(exclude_list = []) {
