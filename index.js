@@ -112,7 +112,7 @@ function saveList(list) {
         }
     };
     fs.writeFileSync(local_dump_name_not_games, JSON.stringify(not_games_list));
-    not_games_list.clear(); // free
+    not_games_list.applist.apps.clear(); // free
 
     const games_only = {
         applist: {
@@ -120,7 +120,7 @@ function saveList(list) {
         }
     };
     fs.writeFileSync(local_dump_name_games, JSON.stringify(games_only));
-    games_only.clear(); // free
+    games_only.applist.apps.clear(); // free
 
     const achievements_only = {
         applist: {
@@ -128,7 +128,7 @@ function saveList(list) {
         }
     };
     fs.writeFileSync(local_dump_name_games_achievements, JSON.stringify(achievements_only));
-    achievements_only.clear(); // free
+    achievements_only.applist.apps.clear(); // free
 
     fs.writeFileSync(local_dump_name, JSON.stringify(list));
 }
