@@ -35,7 +35,7 @@ function millisToDiffStr(millis) {
     let seconds = millis / 1000;
     const hours = Math.floor(seconds / 3600); // 3,600 seconds in 1 hour
     seconds = seconds % 3600; // seconds remaining after extracting hours
-    const minutes = Math.floor( seconds / 60 ); // 60 seconds in 1 minute
+    const minutes = Math.floor(seconds / 60); // 60 seconds in 1 minute
     seconds = Math.floor(seconds % 60);
 
     return hours + 'h ' + minutes + 'm ' + seconds + 's';
@@ -52,47 +52,6 @@ async function asyncForEach(array, callback) {
     for (let index = 0; index < array.length; index++) {
         await callback(array[index], index, array);
     }
-}
-
-async function tempFix() {
-    const apps = JSON.parse(fs.readFileSync(local_dump_name).toString());
-    const startDate = new Date();
-
-    await asyncForEach(apps.applist.apps, async (app, index, arr) => {
-        console.log('App ' + index + ' of ' + arr.length);
-        console.log(Math.round(100 * index / arr.length) + '% in ' + millisToDiffStr((new Date()) - startDate));
-        app.achievements = null;
-        if (app.type === 'game') {
-            let response = await fetch(data_url + app.appid);
-            while (!response.ok) {
-                console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
-                console.warn('Url: ', data_url + app.appid);
-                let timeout = 1000 * 60 * 2; // Too many requests, any random error
-                if (response.status === 502) { // Bad getaway, sometimes occur randomly
-                    timeout = 1000;
-                }
-                await timeOutPromise(timeout);
-                response = await fetch(data_url + app.appid);
-            }
-
-            const data = await response.json();
-            if (!data[app.appid].success) {
-                console.log('failed for game ' + app.appid);
-                console.log(data);
-                return;
-            }
-
-            if (!data[app.appid].data.achievements) { // Some apps don't have the key for some reason, eg Dota 2, 570
-                console.log('App doesn\'t have ach key: ' + app.appid);
-                return;
-            }
-
-            app.achievements = data[app.appid].data.achievements.total;
-
-        }
-    });
-
-    saveList(apps);
 }
 
 function saveList(list) {
@@ -126,7 +85,10 @@ function saveList(list) {
 
     const achievements_only = {
         applist: {
-            apps: list.applist.apps.filter(app => app.type === 'game' && app.achievements > 0).map(app => ({appid: app.appid, name: app.name}))
+            apps: list.applist.apps.filter(app => app.type === 'game' && app.achievements > 0).map(app => ({
+                appid: app.appid,
+                name: app.name
+            }))
         }
     };
     fs.writeFileSync(local_dump_name_games_achievements, JSON.stringify(achievements_only));
@@ -162,20 +124,20 @@ function generateList(exclude_list = []) {
             const now = new Date();
             const ids = batch.map(a => a.appid).join(',');
 
-            console.log('Starting batch ' + index + ' of ' + batches_count + ' - ' + Math.round(100*index/batches_count) + '%');
-            console.log('Processing appids: ' + ids + ' - Estimated time needed: ' + millisToDiffStr((now - start_date) / (index/batches_count)));
-            console.log('ETA: ' + millisToDiffStr(((now - start_date) / (index/batches_count) - (now - start_date))));
+            console.log('Starting batch ' + index + ' of ' + batches_count + ' - ' + Math.round(100 * index / batches_count) + '%');
+            console.log('Processing appids: ' + ids + ' - Estimated time needed: ' + millisToDiffStr((now - start_date) / (index / batches_count)));
+            console.log('ETA: ' + millisToDiffStr(((now - start_date) / (index / batches_count) - (now - start_date))));
             console.log('------------------');
 
             let response = await fetch(data_url + ids);
             while (!response.ok) {
                 console.warn('Batch failed, we have to take a break and retry. Code: ' + response.status);
                 console.warn('Url: ', data_url + ids);
-                let timeout = 1000 * 60 * 2; // Too many requests, any random error
+                let timeout = 1000 * 60 * 2; // Too many requests, any random error, wait 2 minutes
                 if (response.status === 502) { // Bad getaway, sometimes occur randomly
                     timeout = 1000;
                 }
-                await timeOutPromise(timeout); // 2 minutes
+                await timeOutPromise(timeout);
                 response = await fetch(data_url + ids);
             }
 
@@ -223,31 +185,18 @@ async function fullUpdate() {
         return;
     }
     is_processing = true;
+    console.log('Working directory: ', process.cwd());
     let exclude_list = [];
 
     if (fs.existsSync(local_dump_path)) {
         process.chdir(local_dump_path);
-        try {
-            run('git pull origin master');
-        } catch (e) {
-            console.warn('Could not git pull');
-            console.log(e);
-            return;
-        }
-    }
-    else {
-        try {
-            run('git clone ' + git_dumps_url + ' ' + local_dump_path);
-            process.chdir(local_dump_path);
-        }
-        catch (e) {
-            console.warn('Unable to clone dumps repo.');
-            console.log(e);
-            return;
-        }
+        run('git pull origin master');
+    } else {
+        run('git clone ' + git_dumps_url + ' ' + local_dump_path);
+        process.chdir(local_dump_path);
     }
 
-    if(!isOldList()) {
+    if (!isOldList()) {
         console.log('The list isn\'t old enough to be refreshed');
         return;
     }
@@ -256,34 +205,37 @@ async function fullUpdate() {
         exclude_list = JSON.parse(fs.readFileSync(local_dump_name).toString()).applist.apps;
     }
 
-    try {
-        const list = await generateList(exclude_list);
-        saveList(list);
-    } catch (e) {
-        console.warn('An error occurred generating list');
-        console.log(e);
-        return;
-    }
+    const list = await generateList(exclude_list);
+    saveList(list);
+    printCoolStats(list);
 
-    try {
+    if (process.env.NO_PUSH !== 'TRUE') {
         console.log('Pushing new data to repo..');
         run('git add -A');
         run('git commit -m "Auto commit"');
         run('git push origin master');
-    } catch (e) {
-        console.log('An error occurred pushing the new list');
-        console.log(e);
     }
 
+
     console.log('Finished.');
+    process.chdir(startDir);
+    is_processing = false;
+}
+
+function printCoolStats(list) {
+    const counts = {};
+    list.applist.apps.map(app => app.type).forEach(type => counts[type] = (counts[type] || 0) + 1);
+    const total_apps = list.applist.apps.length;
+    const total_achievements = list.applist.apps.filter(app => app.achievements > 0).length;
+
+    console.log('Count by app type: \n', counts);
+    console.log('Total apps: ', total_apps);
+    console.log('Apps with achievements: ', total_achievements);
 }
 
 async function main() {
-    process.chdir(local_dump_path);
-    await tempFix(); return;
+    console.log('Starting with following environment: ', process.env);
     await fullUpdate();
-    process.chdir(startDir);
-    is_processing = false;
 }
 
 main();
