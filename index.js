@@ -141,20 +141,42 @@ function generateList(exclude_list = []) {
                 response = await fetch(data_url + ids);
             }
 
-            const data = await response.json();
-            batch.forEach((app) => {
-                let achievements = null;
-                if (data[app.appid].success && data[app.appid].data.achievements) { // Some apps don't have the key for some reason, eg Dota 2, 570
-                    achievements = data[app.appid].data.achievements.total;
-                }
-
-                arranged_list.applist.apps.push({
-                    appid: app.appid,
-                    name: app.name,
-                    type: data[app.appid].success ? data[app.appid].data.type : "junk",
-                    achievements
+            // Some urls may return nothing at all
+            // e.g. FetchError: invalid json response body at https://store.steampowered.com/api/appdetails/?filters=basic,achievements&appids=1444140 reason: Unexpected end of JSON input
+            // GET https://store.steampowered.com/api/appdetails/?filters=basic,achievements&appids=1444140 => nothing at all
+            // At least that one is ok to mark as junk since it is a DLC.
+            // may need more fixing if number_simultaneous_process > 1
+            try {
+                const data = await response.json();
+                batch.forEach((app) => {
+                    let achievements = null;
+                    if (data[app.appid].success && data[app.appid].data.achievements) { // Some apps don't have the key for some reason, eg Dota 2, 570
+                        achievements = data[app.appid].data.achievements.total;
+                    }
+    
+                    arranged_list.applist.apps.push({
+                        appid: app.appid,
+                        name: app.name,
+                        type: data[app.appid].success ? data[app.appid].data.type : "junk",
+                        achievements
+                    });
                 });
-            });
+            } catch (e) {
+                console.warn('Invalid json, marking apps as junk in Url: ', data_url + ids);
+                batch.forEach((app) => {
+                    let achievements = null;
+
+                    arranged_list.applist.apps.push({
+                        appid: app.appid,
+                        name: app.name,
+                        type: "junk",
+                        achievements
+                    });
+                });
+            }
+
+            // let's not pressure the server as much
+            await timeOutPromise(100);
         });
 
         resolve(arranged_list);
