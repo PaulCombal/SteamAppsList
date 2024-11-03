@@ -24,12 +24,15 @@ const local_dump_name = './app_list.json';
 const local_dump_name_not_games = './not_games.json';
 const local_dump_name_games = './game_list.json';
 const local_dump_name_games_achievements = './game_achievements_list.json';
-const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic,achievements&appids=';
+// const data_url = 'https://store.steampowered.com/api/appdetails/?filters=basic,achievements&appids=';
+const data_url = 'https://store.steampowered.com/api/appdetails/?filters=achievements,release_date&appids=';
 const git_dumps_url = 'https://' + (git_credentials.login || process.env.GITUSERNAME) + ':' + (git_credentials.password || process.env.GITPASSWORD) + '@github.com/PaulCombal/SteamAppsListDumps.git';
 const all_apps_list_endpoint = "https://api.steampowered.com/ISteamApps/GetAppList/v2/";
 const startDir = process.cwd();
 const is_dev = !process.env.PORT;
 let is_processing = false;
+const write_batch_period = 10;
+const previous_run_file = "previous_run.lock";
 
 function millisToDiffStr(millis) {
     let seconds = millis / 1000;
@@ -99,7 +102,7 @@ function generateList(exclude_list = []) {
     return new Promise(async (resolve) => {
         const number_simultaneous_process = 1; // For now we query them 1 by 1, let's see of they fix their API
 
-        //const all_apps_list = {"applist":{"apps":[{"appid":216938,"name":"Pieterw test app76 ( 216938 )"},{"appid":660010,"name":"test2"},{"appid":660130,"name":"test3"},{"appid":397950,"name":"Clustertruck"},{"appid":397960,"name":"Mystery Expedition: Prisoners of Ice"},{"appid":397970,"name":"Abandoned: Chestnut Lodge Asylum"},{"appid":397980,"name":"Invasion"},{"appid":397990,"name":"Woof Blaster"},{"appid":398000,"name":"Little Big Adventure 2"},{"appid":398020,"name":"Colony Assault"},{"appid":398070,"name":"Protoshift"}]}};
+        // const all_apps_list = {"applist":{"apps":[{"appid":1160220,"name":"Paradise Killer"},{"appid":2358720,"name":"Black Myth: Wukong"}]}};
         const all_apps_list = await fetch(all_apps_list_endpoint).then(r => r.json());
         const known_app_ids = exclude_list.map(app => app.appid);
         const apps_to_process = all_apps_list.applist.apps.filter(app => !known_app_ids.includes(app.appid));
@@ -124,10 +127,10 @@ function generateList(exclude_list = []) {
             const now = new Date();
             const ids = batch.map(a => a.appid).join(',');
 
+            console.log('------------------');
             console.log('Starting batch ' + index + ' of ' + batches_count + ' - ' + Math.round(100 * index / batches_count) + '%');
             console.log('Processing appids: ' + ids + ' - Estimated time needed: ' + millisToDiffStr((now - start_date) / (index / batches_count)));
             console.log('ETA: ' + millisToDiffStr(((now - start_date) / (index / batches_count) - (now - start_date))));
-            console.log('------------------');
 
             let response = await fetch(data_url + ids);
             while (!response.ok) {
@@ -175,10 +178,14 @@ function generateList(exclude_list = []) {
                 });
             }
 
+            if (index % write_batch_period == 0) {
+                saveList(arranged_list);
+            }
+
             // let's not pressure the server as much
             await timeOutPromise(100);
         });
-
+        console.log('------------------'); // Makes formatting look nice
         resolve(arranged_list);
     });
 }
@@ -218,6 +225,33 @@ async function fullUpdate() {
         process.chdir(local_dump_path);
     }
 
+    if (!fs.existsSync(local_dump_name)) {
+        console.error(local_dump_name + "does not exist. Check that your git credentials are set correctly, and there are no merge conflicts in " + local_dump_path);
+        return;
+    }
+
+    if (process.env.HARD_UPDATE == 'TRUE') {
+        // Previously, we just deleted the files. However, this adds significant time to the processing
+        // that isn't necessary, and overrides games that may have been removed (due to #1)
+        // To avoid this, open the file and remove any "bad" entries
+        if (!fs.existsSync(previous_run_file)) {
+            console.log("Removing old entries for hard update")
+            file = fs.readFileSync(local_dump_name, encoding='UTF-8');
+            json = JSON.parse(file);
+            console.log(`Found ${json.applist.apps.length} apps in old list`);
+            for (i = 0; i < json.applist.apps.length; i++) {
+                if (json.applist.apps[i].type == "game" && json.applist.apps[i].achievements == null) {
+                    json.applist.apps.splice(i, 1);
+                    i--; // Decrement, since splice will update indices and length
+                }
+            }
+            console.log(`Pruned to ${json.applist.apps.length} apps that do not need updating`);
+            saveList(json);
+        } else {
+            console.warn("A previous run was interrupted! Hard update will not be run until " + previous_run_file + " is removed.")
+        }
+    }
+
     if (!isOldList()) {
         console.log('The list isn\'t old enough to be refreshed');
         return;
@@ -227,8 +261,10 @@ async function fullUpdate() {
         exclude_list = JSON.parse(fs.readFileSync(local_dump_name).toString()).applist.apps;
     }
 
+    fs.writeFileSync(previous_run_file, "A previous run was interrupted! Delete this file to start a new hard update.");
     const list = await generateList(exclude_list);
     saveList(list);
+    fs.rmSync(previous_run_file);
     printCoolStats(list);
 
     if (process.env.NO_PUSH !== 'TRUE') {
@@ -237,7 +273,6 @@ async function fullUpdate() {
         run('git commit -m "Auto commit"');
         run('git push origin master');
     }
-
 
     console.log('Finished.');
     process.chdir(startDir);
